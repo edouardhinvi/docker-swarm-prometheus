@@ -1,0 +1,249 @@
+version: '3.3'
+
+# networks
+networks:
+  # prometheus overlay: all prometheus containers runs in this overlay, some of them also run into the Traefik one
+  prometheus:
+    driver: overlay
+  # overlay where Traefik run where to put services that are exposed to the internet
+  swarm_overlay:
+    external:
+      name: traefik-net
+
+# configs
+configs:
+  blackbox.yml:
+    file: ./configs/blackbox.yml
+  alert.rules:
+    file: ./configs/alert.rules
+  prometheus.yml:
+    file: ./configs/prometheus.yml
+  alertmanager.yml:
+    file: ./configs/alertmanager.yml
+  fregate_url:
+    file: ./configs/fregate_url
+
+# secrets
+secrets:
+  fregate_user:
+    file: ./secrets/fregate_user
+  fregate_password:
+    file: ./secrets/fregate_password
+
+# volume
+volumes:
+  prometheus:
+    driver: nfs
+    driver_opts:
+      share: master:/data/nfs
+      create: 'true'
+    #external:
+    #  name: prometheus
+  alertmanager:
+    driver: nfs
+    driver_opts:
+      share: master:/data/nfs
+      create: 'true'
+    #external:
+    #  name: alertmanager
+  grafana:
+    driver: nfs
+    driver_opts:
+      share: master:/data/nfs
+      create: 'true'
+    #external:
+    #  name: grafana
+
+services:
+  # prometheus service
+  prometheus:
+    image: prom/prometheus
+    volumes:
+      # if not using docker configs
+      # - /data/monitor/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      # - /data/monitor/prometheus/alert.rules:/etc/prometheus/alert.rules
+      # if not using nfs volume
+      # - /data/monitor/prometheus/storage:/prometheus
+      - prometheus:/prometheus
+    command:
+      - '-config.file=/etc/prometheus/prometheus.yml'
+      - '-storage.local.path=/prometheus'
+      - '-alertmanager.url=http://alertmanager:9093'
+      - '-web.external-url=https://prometheus.domain.test'
+    deploy:
+      labels:
+        - traefik.port=9090
+        - traefik.frontend.rule=Host:prometheus.domain.test
+        - traefik.frontend.auth.basic=admin:$$apr1$$...
+        - traefik.docker.network=traefik-net
+    depends_on:
+      - cadvisor
+      - alertmanager
+      - node-exporter
+      - blackbox-exporter
+      - docker-exporter
+    networks:
+      - prometheus
+      # needs a connection into the Traefik overlay to be accessed from the outside
+      - swarm_overlay
+    configs:
+      - source: alert.rules
+        target: /etc/prometheus/alert.rules
+      - source: prometheus.yml
+        target: /etc/prometheus/prometheus.yml
+
+  # alertmanager service
+  alertmanager: 
+    image: prom/alertmanager
+    volumes:
+      # if not using docker configs
+      #- /data/monitor/alertmanager/alertmanager.yml:/etc/alertmanager/config.yml
+      # if not using nfs volume
+      # - /data/monitor/alertmanager/storage:/alertmanager
+      - alertmanager:/alertmanager
+    networks:
+      - prometheus
+      # needs a connection into the Traefik overlay to be accessed from the outside
+      - swarm_overlay
+    command:
+      - '-config.file=/etc/alertmanager/config.yml'
+      - '-storage.path=/alertmanager'
+      - '-web.external-url=https://alertmanager.domain.test'
+    deploy:
+      labels:
+        - traefik.port=9093
+        - traefik.frontend.rule=Host:alertmanager.domain.test
+        - traefik.frontend.auth.basic=admin:$$apr1$$...
+        - traefik.docker.network=traefik-net
+    depends_on:
+      - fregate
+    networks:
+      - prometheus
+      # needs a connection into the Traefik overlay to be accessed from the outside
+      - swarm_overlay
+    configs:
+      - source: alertmanager.yml
+        target: /etc/alertmanager/config.yml
+
+  # grafana service
+  grafana:
+    image: grafana/grafana
+    volumes:
+      # if not using nfs volumes
+      # - /data/monitor/grafana:/var/lib/grafana
+      - grafana:/var/lib/grafana
+    depends_on:
+      - prometheus
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=mysecretpassword
+      # Be carefull with GF_SECURITY_ADMIN_USER (only enabled at database creation)
+      - GF_SECURITY_ADMIN_USER=admin
+      # To disable basic auth for Grafana
+      #- GF_AUTH_BASIC_ENABLED=false
+      - GF_SERVER_DOMAIN=perf.domain.test
+      - GF_SERVER_ROOT_URL=https://perf.domain.test
+    deploy:
+      labels:
+        - traefik.port=3000
+        - traefik.frontend.rule=Host:perf.domain.test
+        - traefik.frontend.auth.basic=admin:$$apr1$$...
+        - traefik.docker.network=traefik-net
+    networks:
+      - prometheus 
+      # needs a connection into the Traefik overlay to be accessed from the outside
+      - swarm_overlay
+
+  # cadvisor global service
+  cadvisor:
+    image: google/cadvisor
+    hostname: '{{.Node.ID}}'
+    #command: -logtostderr -docker_only -storage_driver=influxdb -storage_driver_db=cadvisor -storage_driver_host=influx:8086
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    deploy:
+      mode: global
+      resources:
+        limits:
+          memory: 80M
+    networks:
+      - prometheus
+
+  # node-exporter
+  node-exporter:
+    image: prom/node-exporter
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command: '-collector.procfs=/host/proc -collector.sysfs=/host/sys -collector.filesystem.ignored-mount-points="^(/rootfs|/host|)/(sys|proc|dev|host|etc)($$|/)" collector.filesystem.ignored-fs-types="^(sys|proc|auto|cgroup|devpts|ns|au|fuse\.lxc|mqueue)(fs|)$$"'
+    deploy:
+      mode: global
+      resources:
+        limits:
+          cpus: '0.10'
+          memory: 32M
+    hostname: "{{.Node.ID}}"
+    environment:
+      #HOST_HOSTNAME: /etc/host_hostname
+      HOST_HOSTNAME: /etc/hostname
+    networks:
+      - prometheus
+
+  # docker-exporter
+  docker-exporter:
+    image: basi/socat
+    networks:
+      - prometheus
+    deploy:
+      mode: global
+      resources:
+        limits:
+          cpus: '0.05'
+          memory: 6M
+        reservations:
+          cpus: '0.05'
+          memory: 4M
+
+  # blackbox-exporter
+  blackbox-exporter:
+    image: prom/blackbox-exporter
+    command: '--config.file=/config/blackbox.yml'
+    # with debug
+    #command: '--config.file=/config/blackbox.yml --log.level=debug'
+    networks:
+      - prometheus
+      # needs a connection into the Traefik overlay if testing service that are in this overlay 
+      - swarm_overlay
+    configs:
+      - source: blackbox.yml
+        target: /config/blackbox.yml
+
+  # fregate
+  fregate:
+    image: chmod666/fregate
+    environment:
+      FREESMS_URL: "/fregate/url"
+      FREESMS_USERNAME: "/fregate/user"
+      FREESMS_PASSWORD: "/fregate/password"
+    configs:
+      - source: fregate_url
+        target: /fregate/url
+    secrets:
+      - source: fregate_user
+        target: /fregate/user
+      - source: fregate_password
+        target: /fregate/password
+    deploy:
+      labels:
+        - traefik.port=13122
+        - traefik.frontend.rule=Host:fregate.domain.test
+        - traefik.frontend.auth.basic=admin:$$apr1$$...
+        - traefik.docker.network=traefik-net
+    networks:
+      - prometheus
+      # needs a connection into the Traefik overlay to be accessed from the outside
+      - swarm_overlay

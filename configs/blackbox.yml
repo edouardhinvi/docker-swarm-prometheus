@@ -1,0 +1,53 @@
+modules:
+  http_domaintest:
+    prober: http
+    timeout: 5s
+    http:
+      valid_status_codes: [200] 
+      method: GET
+      fail_if_not_ssl: true
+      fail_if_not_matches_regexp:
+        - "domain.test"
+        - "The blog of an insomniac Unix geek"
+      fail_if_matches_regexp:
+        - "404 page not found"
+
+  http_basicauth:
+    prober: http
+    timeout: 25s
+    http:
+      valid_status_codes: [200] 
+      method: GET
+      basic_auth:
+        username: user
+        password: admin
+      fail_if_matches_regexp:
+        - "404 page not found"
+
+  http_basicauth_grafana:
+    prober: http
+    timeout: 25s
+    http:
+      valid_status_codes: [200] 
+      method: GET
+      basic_auth:
+        username: admin
+        password: admin
+      fail_if_matches_regexp:
+
+  http_jekyll:
+    prober: http
+    timeout: 5s
+    http:
+      valid_status_codes: [200] 
+      method: GET
+      fail_if_not_matches_regexp:
+        - "domain.test"
+        - "The blog of an insomniac Unix geek"
+
+  http_2xx:
+    prober: http
+    timeout: 5s
+    http:
+      valid_status_codes: []
+      method: GET

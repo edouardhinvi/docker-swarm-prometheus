@@ -1,0 +1,10 @@
+route:
+    receiver: 'pushover'
+
+receivers:
+    - name: 'pushover'
+      pushover_configs:
+          - user_key: pushoveruserkey
+            token: pushovertoken
+      webhook_configs:
+          - url: http://fregate:13122
