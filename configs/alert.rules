@@ -1,3 +1,20 @@
+#ALERT service_down
+#  IF up == 0
+  
+#ALERT high_load
+#  IF node_load1 > 0.5
+#  ANNOTATIONS {
+#      summary = "Instance {{ $labels.instance }} under high load",
+#      description = "{{ $labels.instance }} of job {{ $labels.job }} is under high load.",
+#  }
+
+#ALERT piwik_nginx 
+#  IF count(time() - container_last_seen{name=~"^piwik_nginx.*"} < 60)
+#  ANNOTATIONS {
+#    summary = "piwik_nginx container is down",
+#    description = "piwik_nginx is down for more tha 1 minute",
+#  }
+
 ALERT high_cpu_usage_on_node
   IF sum(rate(process_cpu_seconds_total[5m])) by (instance) * 100 > 70
   FOR 5m
@@ -68,4 +85,28 @@ ALERT site_down
   ANNOTATIONS {
     description="{{$labels.instance}} has been down for more than 10 minutes.",
     summary="{{$labels.instance}} down"
+  }
+
+ALERT container_missing_in_piwik_stack
+  IF count(container_last_seen{container_label_com_docker_stack_namespace="piwik"}) < 3
+  FOR 5m
+  ANNOTATIONS {
+    summary="A container is missing in Piwik stack",
+    description="There are less than three container in the Piwik stack"
+  }
+
+#ALERT missing_node_exporter 
+#  IF count(container_last_seen{container_label_com_docker_stack_namespace="prometheus",container_label_com_docker_swarm_service_name=~".*node.*exporter.*") < count(swarm_node_info)
+#  FOR 5m
+#  ANNOTATIONS {
+#    summary="A container a node exporter is missing",
+#    description="A node-expoter container is not running on a host"
+#  }
+
+ALERT container_not_in_running_state
+  IF sum(container_tasks_state{state!="running"}) by (container_label_com_docker_stack_namespace) > 0
+  FOR 1m
+  ANNOTATIONS {
+      summary = "Container not in running state in stack '{{ $labels.container_label_com_docker_swarm_task_name }}' on '{{ $labels.instance }}'",
+      description = "{{ $labels.container_label_com_docker_swarm_task_name }} has a container not in running state on {{ $labels.instance }}"
   }
