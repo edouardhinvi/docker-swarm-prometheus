@@ -76,12 +76,12 @@ services:
         - traefik.frontend.rule=Host:prometheus.domain.test
         - traefik.frontend.auth.basic=admin:$$apr1$$...
         - traefik.docker.network=traefik-net
-    depends_on:
-      - cadvisor
-      - alertmanager
-      - node-exporter
-      - blackbox-exporter
-      - docker-exporter
+    #depends_on:
+    #  - cadvisor
+    #  - alertmanager
+    #  - node-exporter
+    #  - blackbox-exporter
+    #  - docker-exporter
     networks:
       - prometheus
       # needs a connection into the Traefik overlay to be accessed from the outside
@@ -115,8 +115,8 @@ services:
         - traefik.frontend.rule=Host:alertmanager.domain.test
         - traefik.frontend.auth.basic=admin:$$apr1$$...
         - traefik.docker.network=traefik-net
-    depends_on:
-      - fregate
+    #depends_on:
+    #  - fregate
     networks:
       - prometheus
       # needs a connection into the Traefik overlay to be accessed from the outside
@@ -132,8 +132,8 @@ services:
       # if not using nfs volumes
       # - /data/monitor/grafana:/var/lib/grafana
       - grafana:/var/lib/grafana
-    depends_on:
-      - prometheus
+    #depends_on:
+    # - prometheus
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=mysecretpassword
       # Be carefull with GF_SECURITY_ADMIN_USER (only enabled at database creation)
